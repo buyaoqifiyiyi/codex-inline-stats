@@ -4,12 +4,22 @@ $package = Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending 
 $result = [ordered]@{
     pluginVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'VERSION') -Raw).Trim()
     codexVersion = [string]$package.Version
-    nodeExists = (Test-Path -LiteralPath $config.node)
+    nodeExists = [bool]($config.node -and (Test-Path -LiteralPath $config.node))
     pythonExists = (Test-Path -LiteralPath $config.python)
     debugPort = $config.port
     debugReachable = $false
     codexPageFound = $false
     debugAddress = $null
+    mode = $(if ($config.mode) { $config.mode } else { 'inline' })
+}
+if ($result.mode -eq 'external') {
+    $externalScript = Join-Path $PSScriptRoot 'external.py'
+    $result.externalWindowRunning = [bool](Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -in @('python.exe','pythonw.exe') -and $_.CommandLine -and $_.CommandLine.Contains($externalScript)
+    })
+    $result.debugRequired = $false
+    $result | ConvertTo-Json -Depth 4
+    return
 }
 foreach ($address in @('127.0.0.1', '[::1]')) {
     try {

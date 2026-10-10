@@ -2,6 +2,8 @@
 
 Windows 上的 Codex 桌面端内嵌统计栏：在聊天输入框下方显示处理阶段、最近调用均速、累计 token、缓存命中率和整段聊天当前有效上下文的估计占比；达到 70% 时提示准备新会话交接。
 
+**v0.4.0 新增外置窗口**：手动启动独立原生窗口，直接读取本机 Codex 会话数据库与日志，无调试连接、无网络端口。Codex 可从任意原版入口启动或重启。
+
 **非官方本机定制。** 使用 localhost 调试连接向页面加入 DOM，未修改 Codex 的签名安装文件。界面占据正常布局空间，随聊天切换重新挂载，不使用悬浮窗口。
 
 ## 环境
@@ -11,6 +13,26 @@ Windows 上的 Codex 桌面端内嵌统计栏：在聊天输入框下方显示�
 - [Node.js](https://nodejs.org/) 22+ 和 [Python](https://www.python.org/downloads/windows/) 3.10+，加入 PATH。只使用标准库，无 npm/pip 依赖。
 
 ## 安装与启动
+
+### 手动启动的外置应用
+
+Python 需带标准库 `tkinter`（python.org 的 Windows 安装通常包含；部分嵌入式 Python 不包含）。执行：
+
+```powershell
+.\Install.ps1 -External
+```
+
+安装后自行双击桌面 **Codex 外置统计**，关闭窗口即停止该窗口的采集；不自动随 Codex 或登录启动。仍使用原版 Codex。`-External` 会停止此安装目录的旧内嵌采集器，移除指向它的内嵌桌面入口和登录启动入口，创建外置入口；不会退出 Codex或删除聊天。正在运行的旧页面栏位可能保留到 Codex 页面销毁。
+
+通过搜索标题或完整会话 ID，再从列表选择要监测的会话。标题重复时可用 ID 区分，选择后不会自动跟随其它聊天。外置窗口不读取 Codex UI，因此不知道你当前打开的聊天；首次默认选择最近更新的一项，此后保存所选 ID。列表来自数据库最近 512 个聊天；保存的更旧会话仍可读，但列表不一定包含它。
+
+窗口采用参考 Token Monitor 的窄竖向深色设计：大号等宽累计数值、青色上下文条、分区细线及独立会话列表，保留 Windows 原生标题栏。可显示调用均速、累计 token、缓存命中率、最近上报的有效上下文、上报时间和处理阶段，也可手动置顶；上下文达到 70% 时可复制交接指令或暂不提醒。把指令粘贴到**所选的原会话**发送。原生进度条视觉长度封顶 100%，文字读数保留超过 100% 的数值。所有统计口径仍遵循下文；不提供服务端逐 token 速度。更新可能有日志交付延迟，且 Codex 数据库/日志格式变化仍可能需要适配。
+
+外置偏好保存在 `%LOCALAPPDATA%\CodexExternalStats\preferences.json`，只保存所选 ID 和提醒选择，不保存聊天内容。外置模式安装与运行均不需要 Node.js。升级前先关闭外置窗口，再重新执行 `Install.ps1 -External`；安装脚本不会自动关闭正在运行的外置窗口。
+
+外置模式运行 `Get-Status.ps1` 会报告 `mode=external`、`debugRequired=false` 和是否存在窗口进程；进程存在不能单独证明读数正确。无需排查内嵌模式的调试端口。
+
+### 内嵌模式
 
 下载 Release 中的 ZIP 或本仓库源码，完整解压，进入该文件夹执行：
 
@@ -100,6 +122,7 @@ v0.3.2 的 `launch` 字段记录入口最近一次尝试的结果与时间。`bl
 
 ```powershell
 python tests/test_telemetry.py
+python tests/test_external.py
 node --check agent.mjs
 node --check renderer.js
 node tests/test-debug-endpoint.mjs
@@ -116,6 +139,10 @@ Windows CI 在 Python 3.10 / 3.14 与 Node 22 上运行这些检查。合成页�
 
 启动测试使用隔离目录和模拟进程/连接，验证旧进程无调试连接时的状态记录、等待完全退出后启动、参数保留以及已有正常进程的复用。不会为了测试退出真实 Codex；真正退出后的自动重开仍须由用户在任务结束时确认。
 
+外置测试使用原生 Tk 窗口和合成读数，验证同名会话区分、手动选择后旧响应拒绝、提醒持久化、压缩后读数重置、交接复制与最小窗口布局。真实日志读取另行在本机验证，不等同于第二台机器验证。
+
 ## 许可与来源
 
 MIT。`telemetry.py` 改编自 [drkang7/codex-token-hud](https://github.com/drkang7/codex-token-hud) `v1.2.0-beta.1`，保留上游署名和许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+外置窗口的视觉布局参考 [Javis603/token-monitor](https://github.com/Javis603/token-monitor) 的 Home 与 Sessions 展示图，使用本项目自己的 Tk 实现，不包含上游界面代码或图片。

@@ -5,10 +5,12 @@ param(
     [string]$PythonPath,
     [ValidateRange(1024,65535)][int]$Port = 9335,
     [switch]$StartAtLogin,
+    [switch]$External,
     [switch]$NoShortcuts,
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
+if ($External -and $StartAtLogin) { throw 'External mode is manually launched; do not use -StartAtLogin.' }
 if (-not $NodePath) {
     $command = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($command) { $NodePath = $command.Source }
@@ -17,14 +19,20 @@ if (-not $PythonPath) {
     $command = Get-Command python.exe -ErrorAction SilentlyContinue
     if ($command) { $PythonPath = $command.Source }
 }
-if (-not $NodePath -or -not (Test-Path -LiteralPath $NodePath)) { throw 'Install Node.js 22+ or pass -NodePath.' }
+if (-not $External -and (-not $NodePath -or -not (Test-Path -LiteralPath $NodePath))) { throw 'Install Node.js 22+ or pass -NodePath.' }
 if (-not $PythonPath -or -not (Test-Path -LiteralPath $PythonPath)) { throw 'Install Python 3.10+ or pass -PythonPath.' }
-$nodeVersion = & $NodePath --version
-if ($LASTEXITCODE -ne 0 -or ([version]$nodeVersion.TrimStart('v')).Major -lt 22) { throw 'Node.js 22+ is required.' }
+if (-not $External) {
+    $nodeVersion = & $NodePath --version
+    if ($LASTEXITCODE -ne 0 -or ([version]$nodeVersion.TrimStart('v')).Major -lt 22) { throw 'Node.js 22+ is required.' }
+}
 & $PythonPath -c 'import sys,sqlite3; sys.exit(0 if sys.version_info >= (3,10) else 1)'
 if ($LASTEXITCODE -ne 0) { throw 'Python 3.10+ with sqlite3 is required.' }
+if ($External) {
+    & $PythonPath -I -c 'import tkinter'
+    if ($LASTEXITCODE -ne 0) { throw 'External mode requires Python with tkinter.' }
+}
 $files = @('agent.mjs','debug-endpoint.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
-    'Launch.ps1','StartAgent.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
+    'Launch.ps1','StartAgent.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file))) { throw "Missing source file: $file" }
 }
@@ -36,10 +44,29 @@ if (Test-Path -LiteralPath (Join-Path $InstallDir 'StartAgent.ps1')) {
     & (Join-Path $PSScriptRoot 'StartAgent.ps1') -ApplicationDir $InstallDir -StopOnly
 }
 foreach ($file in $files) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination (Join-Path $InstallDir $file) -Force }
-@{node=[IO.Path]::GetFullPath($NodePath);python=[IO.Path]::GetFullPath($PythonPath);port=$Port} |
+@{node=$(if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { $null });python=[IO.Path]::GetFullPath($PythonPath);port=$Port;mode=$(if ($External) { 'external' } else { 'inline' })} |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'config.json') -Encoding UTF8
 if (-not $NoShortcuts) {
     $shell = New-Object -ComObject WScript.Shell
+    if ($External) {
+        foreach ($entry in @(
+            @{folder='Desktop';name='Codex（内置统计）.lnk';script='Launch.ps1'},
+            @{folder='Startup';name='Codex 内置统计采集.lnk';script='StartAgent.ps1'}
+        )) {
+            $oldPath = Join-Path ([Environment]::GetFolderPath($entry.folder)) $entry.name
+            if (Test-Path -LiteralPath $oldPath) {
+                $oldLink = $shell.CreateShortcut($oldPath)
+                if ($oldLink.Arguments.Contains((Join-Path $InstallDir $entry.script))) { Remove-Item -LiteralPath $oldPath }
+            }
+        }
+        $link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex 外置统计.lnk'))
+        $link.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDir 'StartExternal.ps1') + '"'
+        $link.WorkingDirectory = $InstallDir
+        $link.Save()
+        Write-Output "External window installed in $InstallDir. Use Codex normally and launch Codex External Stats separately."
+        return
+    }
     $link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex（内置统计）.lnk'))
     $link.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDir 'Launch.ps1') + '"'

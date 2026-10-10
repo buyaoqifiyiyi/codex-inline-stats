@@ -1,8 +1,13 @@
 ﻿$ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'StartAgent.ps1') -StopOnly
+$externalScript = Join-Path $PSScriptRoot 'external.py'
+Get-CimInstance Win32_Process | Where-Object {
+    $_.Name -in @('python.exe','pythonw.exe') -and $_.CommandLine -and $_.CommandLine.Contains($externalScript)
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
 $shell = New-Object -ComObject WScript.Shell
 foreach ($entry in @(
     @{folder='Desktop';name='Codex（内置统计）.lnk';script='Launch.ps1'},
+    @{folder='Desktop';name='Codex 外置统计.lnk';script='StartExternal.ps1'},
     @{folder='Startup';name='Codex 内置统计采集.lnk';script='StartAgent.ps1'}
 )) {
     $path = Join-Path ([Environment]::GetFolderPath($entry.folder)) $entry.name

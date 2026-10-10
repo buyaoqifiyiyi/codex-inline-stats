@@ -42,10 +42,11 @@ def reading(thread_id):
         'total':total,'context':metrics.get('context'),
         'contextState':metrics.get('context_state')}
 
-for line in sys.stdin:
-    try:
-        query = json.loads(line)
-        result = reading(query['id'])
-    except Exception as error:
-        result = {'id':locals().get('query',{}).get('id'), 'ok':False, 'error':type(error).__name__}
-    print(json.dumps(result, ensure_ascii=False, allow_nan=False), flush=True)
+if __name__ == '__main__':
+    for line in sys.stdin:
+        try:
+            query = json.loads(line)
+            result = reading(query['id'])
+        except Exception as error:
+            result = {'id':locals().get('query',{}).get('id'), 'ok':False, 'error':type(error).__name__}
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False), flush=True)
