@@ -3,6 +3,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';
 import readline from 'node:readline';
+import {findCodexPages} from './debug-endpoint.mjs';
 const folder=path.dirname(fileURLToPath(import.meta.url));
 const config=JSON.parse((await fs.readFile(path.join(folder,'config.json'),'utf8')).replace(/^\uFEFF/,''));
 const renderer=await fs.readFile(path.join(folder,'renderer.js'),'utf8');
@@ -44,8 +45,7 @@ const clients=new Map();
 try {
  while(true){
   try{
-   const targets=await(await fetch(`http://127.0.0.1:${config.port}/json/list`,{signal:AbortSignal.timeout(2000)})).json();
-    const pages=targets.filter(t=>t.type==='page' && t.url.startsWith('app://-/index.html'));
+   const {pages}=await findCodexPages(config.port);
     if(!pages.length)await status('waiting');
    for(const target of pages){
     try {

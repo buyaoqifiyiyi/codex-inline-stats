@@ -66,6 +66,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 
 `debugReachable=false` 通常需要完全退出并从专用入口重开，或检查端口冲突；`codexPageFound=false` 可能是页面地址变更。`active` 只证明最近一次注入/更新成功，不证明所有指标口径正确。结合时间戳检查状态是否过旧。
 
+采集器与诊断会探测 IPv4 `127.0.0.1` 和 IPv6 `::1` 两种本机地址。Codex 重启后可能切换调试服务的绑定地址；v0.3.1 修复了只连接 IPv4 导致统计消失的问题。诊断的 `debugAddress` 显示实际可用的地址。
+
 插件更新：下载新源码，重新执行 `Install.ps1`（自定义路径或端口应使用原参数），再执行安装目录的 `StartAgent.ps1`。更新会停止该目录的采集器，不会中断 Codex 聊天。没有自动更新、自动适配或自动上传诊断。
 
 若客户端改变 DOM、路由或 React 属性，应检查 `renderer.js`，修改后递增 `version`；若改变日志或状态数据库格式，应检查 `telemetry.py` 和 `reader.py`。避免仅根据数值是否“看起来合理”判断兼容性。
@@ -74,7 +76,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 
 采集器读取本机 Codex 状态数据库和会话日志，以绑定当前聊天和提取用量。它没有云端服务，不上传聊天、日志或统计数据，也不读取账号凭据。源码和 Release 不包含开发者本机日志、配置、账号资料或运行环境二进制。
 
-**调试端口意味着本机其他进程也能访问和控制应用页面。** 启动参数限定到 `127.0.0.1`，请勿开放防火墙、代理转发或分享调试连接；实际使用时应检查端口仅监听 loopback。完全退出 Codex 才会关闭它。对调试端口有严格限制的环境不适合使用此方案。
+**调试端口意味着本机其他进程也能访问和控制应用页面。** 启动参数请求绑定 `127.0.0.1`，实际客户端也可能选择 `::1`；采集器只探测这两个本机地址。请勿开放防火墙、代理转发或分享调试连接；实际使用时应检查端口仅监听 loopback。完全退出 Codex 才会关闭它。对调试端口有严格限制的环境不适合使用此方案。
 
 此功能依赖客户端内部结构，不属于稳定官方插件接口。客户端更新可能使统计停止或出现口径变化。
 
@@ -96,6 +98,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 python tests/test_telemetry.py
 node --check agent.mjs
 node --check renderer.js
+node tests/test-debug-endpoint.mjs
 node tests/test-renderer.mjs
 .\Install.ps1 -CheckOnly
 ```
@@ -103,6 +106,8 @@ node tests/test-renderer.mjs
 渲染测试使用本机 Edge headless 和合成聊天页面；可通过环境变量 `EDGE_PATH` 指定 Edge 可执行文件。测试包含聊天重新挂载、旧响应拒绝、窄布局、上下文读数与等待状态、70% 提醒边界、跨会话与重载后的提醒选择、压缩后重新启用、剪贴板成功/失败及回退、保留草稿、不自动发送、复制过程中切换会话或压缩，以及移除。解析测试覆盖完整响应计时、推理不重复计数、用量去重、并行工具返回、重复通知、边界缺失，以及压缩后上下文重估、模型/窗口变化、回滚和无效记录。
 
 Windows CI 在 Python 3.10 / 3.14 与 Node 22 上运行这些检查。合成页面测试不等于所有真实客户端版本、主题、窗口尺寸和模型的兼容性保证。原型曾通过本机真实日志回放和真实 Codex 内嵌验收；发布版的安装与生命周期脚本另经隔离目录验证，尚无第二台机器实测。
+
+连接测试使用本机临时 HTTP 服务，验证 IPv6 独占监听、两种地址切换、无 Codex 页面、错误/无效响应与非本机调试 URL 拒绝；测试结束后关闭服务。
 
 ## 许可与来源
 

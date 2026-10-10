@@ -25,6 +25,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node --check renderer.js
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node tests/test-debug-endpoint.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node tests/test-renderer.mjs
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: PowerShell and installer checks

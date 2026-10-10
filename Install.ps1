@@ -23,7 +23,7 @@ $nodeVersion = & $NodePath --version
 if ($LASTEXITCODE -ne 0 -or ([version]$nodeVersion.TrimStart('v')).Major -lt 22) { throw 'Node.js 22+ is required.' }
 & $PythonPath -c 'import sys,sqlite3; sys.exit(0 if sys.version_info >= (3,10) else 1)'
 if ($LASTEXITCODE -ne 0) { throw 'Python 3.10+ with sqlite3 is required.' }
-$files = @('agent.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
+$files = @('agent.mjs','debug-endpoint.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
     'Launch.ps1','StartAgent.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file))) { throw "Missing source file: $file" }
