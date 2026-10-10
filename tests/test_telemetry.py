@@ -3,7 +3,7 @@ import datetime as dt
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from telemetry import Measurements
+from telemetry import Measurements, context_reading
 
 
 def event(m, seconds, kind, typ=None, **payload):
@@ -58,3 +58,44 @@ event(legacy, 11, 'event_msg', 'token_count', info={
 assert legacy.sample_count == 1
 print('PASS: whole-response timing, reasoning counted once, duplicate usage, '
       'parallel tools, late outputs, missing boundaries, legacy usage')
+
+# Whole retained context uses the last reported total, never session spend or
+# input-only counts. Context updates must also survive response-usage dedup.
+context = Measurements('model-a')
+event(context, 0, 'event_msg', 'task_started', turn_id='context-turn')
+event(context, 10, 'token_usage_record', response_id='context-response', usage=usage)
+response = context.last
+event(context, 10.01, 'event_msg', 'token_count', info={
+    'last_token_usage': {**usage, 'total_tokens': 198420},
+    'total_token_usage': {**usage, 'total_tokens': 9000000},
+    'model_context_window': 258400})
+assert context.last is response and context.sample_count == 1
+assert context.context['tokens'] == 198420 and context.context['window'] == 258400
+event(context, 11, 'compacted')
+assert context.context is None and context.context_state == 'waiting'
+event(context, 11.01, 'event_msg', 'token_count', info={
+    'last_token_usage': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 20283},
+    'total_token_usage': {'total_tokens': 9000000}, 'model_context_window': 258400})
+assert context.context['tokens'] == 20283
+assert abs(context.context['percent'] - 7.849458204334366) < 1e-9
+event(context, 12, 'turn_context', model='model-b')
+assert context.context is None and context.context_state == 'waiting'
+event(context, 13, 'event_msg', 'token_count', info={
+    'last_token_usage': {'total_tokens': 400000}, 'model_context_window': 1000000})
+assert context.context['percent'] == 40
+event(context, 14, 'event_msg', 'thread_rolled_back')
+assert context.context is None and context.context_state == 'waiting'
+for invalid in [None, True, {}, -1, '20283']:
+    assert context_reading({'last_token_usage': {'total_tokens': invalid},
+                            'model_context_window': 258400}, 0) is None
+assert context_reading({'last_token_usage': {'total_tokens': 12}}, 0) is None
+assert context_reading({'last_token_usage': {'total_tokens': 12},
+                        'model_context_window': False}, 0) is None
+assert context_reading({'last_token_usage': {'total_tokens': 0},
+                        'model_context_window': 200}, 0)['percent'] == 0
+assert context_reading({'last_token_usage': {'total_tokens': 201},
+                        'model_context_window': 200}, 0)['percent'] == 100.5
+other = Measurements('model-b')
+assert other.context is None  # Per-thread instances do not share readings.
+print('PASS: whole context, post-compaction totals, model/window changes, rollback, '
+      'missing/invalid readings, no clamping, thread isolation')

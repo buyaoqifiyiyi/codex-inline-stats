@@ -39,6 +39,20 @@ def cache_percent(usage: dict) -> float | None:
     return 100 * cached / total
 
 
+def context_reading(info: dict, at: float | None) -> dict | None:
+    usage = info.get("last_token_usage")
+    if not isinstance(usage, dict):
+        return None
+    tokens = usage.get("total_tokens")
+    window = info.get("model_context_window")
+    # Missing counts are unknown, not zero; bool is not a token count.
+    if (type(tokens) is not int or type(window) is not int or tokens < 0 or window <= 0
+            or max(tokens, window) > 2**53 - 1):
+        return None
+    return {"tokens": tokens, "window": window, "percent": 100 * tokens / window,
+            "measured_at_ms": at}
+
+
 class Measurements:
     """Client-observed response averages; log item times are not decode timings."""
 
@@ -61,6 +75,8 @@ class Measurements:
         self.last_usage_at: float = 0
         self.event_at: float = 0
         self.turn_started_at: float | None = None
+        self.context: dict | None = None
+        self.context_state = "unavailable"
 
     def feed(self, event: dict) -> None:
         kind = event.get("type")
@@ -72,8 +88,17 @@ class Measurements:
             self.event_at = max(self.event_at, at)
         event_type = p.get("type")
 
+        if kind == "compacted" or (kind == "event_msg" and event_type in (
+                "context_compacted", "thread_rolled_back")):
+            self.context = None
+            self.context_state = "waiting"
+            return
         if kind == "turn_context":
-            self.model = p.get("model") or self.model
+            model = p.get("model") or self.model
+            if self.model is not None and model != self.model:
+                self.context = None
+                self.context_state = "waiting"
+            self.model = model
             return
         if kind == "event_msg" and event_type in ("task_started", "turn_started"):
             self.turn_id = p.get("turn_id")
@@ -123,6 +148,11 @@ class Measurements:
             info = p.get("info") or {}
             if not isinstance(info, dict):
                 return
+            # Context snapshots also arrive after compaction, with input/output
+            # zero but a nonzero total. Keep them separate from response TPS.
+            if info:
+                self.context = context_reading(info, at)
+                self.context_state = "reported" if self.context is not None else "unavailable"
             usage = info.get("last_token_usage")
             total = info.get("total_token_usage") or {}
             if isinstance(usage, dict) and at is not None:
@@ -184,6 +214,7 @@ class Measurements:
         return {"model": self.model, "stage": self.stage, "last": self.last,
                 "turn_id": self.turn_id, "turn_output_tokens": self.turn_output,
                 "sample_count": self.sample_count, "output_total": self.output_total,
+                "context": self.context, "context_state": self.context_state,
                 "turn_started_at_ms": self.turn_started_at,
                 "last_event_at_ms": self.event_at}
 

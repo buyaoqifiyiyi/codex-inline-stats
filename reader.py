@@ -20,7 +20,6 @@ def reading(thread_id):
     metrics = tail.measurements.snapshot()
     last = metrics.get('last') or {}
     total = None
-    recent_input = None
     try:
         with Path(row['rollout_path']).open('rb') as f:
             f.seek(max(0, f.seek(0,2) - 2*1024*1024)); lines = f.read().splitlines()
@@ -32,8 +31,6 @@ def reading(thread_id):
                 info = payload.get('info') or {}
                 usage = info.get('total_token_usage') or {}
                 total = usage.get('total_tokens')
-                recent = info.get('last_token_usage') or {}
-                recent_input = recent.get('input_tokens')
                 break
     except OSError: pass
     stale = time.time()*1000-last.get('measured_at_ms',0)>900000
@@ -42,7 +39,8 @@ def reading(thread_id):
     return {'id':thread_id,'ok':True,'stage':metrics.get('stage'),
         'rate':None if stale or not current else last.get('rate'),
         'cache':None if stale else last.get('cache_percent'),
-        'total':total,'recentInputTokens':recent_input}
+        'total':total,'context':metrics.get('context'),
+        'contextState':metrics.get('context_state')}
 
 for line in sys.stdin:
     try:
