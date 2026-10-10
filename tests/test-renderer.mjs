@@ -17,6 +17,7 @@ const fixture = path.join(temp, 'fixture.html');
 const checks = `
 const check=(ok,label)=>{if(!ok)throw Error(label)};
 const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
+(async()=>{
 try {
  check(window.codexInlineStats.context().id===first,'ID binding');
  window.codexInlineStats.update({id:first,ok:true,rate:20,cache:80,total:1000});
@@ -45,10 +46,66 @@ try {
  check(bar.textContent.includes('等待统计') && !bar.textContent.includes('8%'),'No fabricated capacity');
  window.codexInlineStats.update({id:second,ok:true,context:{tokens:201,window:200}});
  check(bar.textContent.includes('101%'),'Unclamped over-capacity reading');
+ const update=tokens=>window.codexInlineStats.update({id:second,ok:true,context:{tokens,window:1000}});
+ const notice=()=>document.querySelector('.codex-inline-handoff');
+ update(699.9);check(notice().hidden,'No alert below exact 70 percent');
+ update(700);check(!notice().hidden && notice().textContent.includes('70%'),'Alert at exact 70 percent');
+ check(bar.getBoundingClientRect().top>=form.getBoundingClientRect().bottom && bar.scrollWidth<=bar.clientWidth,'Reminder normal narrow layout');
+ check(getComputedStyle(notice().querySelector('button')).pointerEvents==='auto','Reminder clickable');
+ const originalButtons=[...notice().querySelectorAll('button')];
+ update(750);check(notice().querySelector('button')===originalButtons[0],'Polling does not rebuild reminder');
+ originalButtons[1].click();update(800);check(notice().hidden,'Dismissal survives updates');
+ window.codexInlineStats.remove();
+ (0,eval)(${JSON.stringify(source)});
+ update(800);check(notice().hidden,'Dismissal survives renderer reload');
+ update(200);update(700);check(!notice().hidden,'Post-compaction rise rearms alert');
+ window.codexInlineStats.update({id:second,ok:true,context:null,contextState:'waiting'});
+ check(notice().hidden,'No alert while context unknown');
+ let clipboard='',sent=0;
+ document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();sent++});
+ const draft=document.querySelector('[contenteditable]');draft.textContent='KEEP MY DRAFT';
+ Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{clipboard=text}}});
+ update(750);await notice().querySelector('button').onclick();
+ check(clipboard.includes(second) && clipboard.includes('Markdown') && clipboard.includes('新建同一项目下的会话'),'Handoff prompt copied with chat ID');
+ check(draft.textContent==='KEEP MY DRAFT' && sent===0,'No draft overwrite or auto-send');
+ check(notice().textContent.includes('已复制'),'Copy feedback');
+ notice().querySelectorAll('button')[1].click();update(800);check(notice().hidden,'Copied prompt does not repeat alert');
+ draft.__reactFiber$test={memoizedProps:{conversationId:first}};
+ window.codexInlineStats.update({id:first,ok:true,context:{tokens:800,window:1000}});
+ check(!notice().hidden,'Dismissal scoped to originating chat');
+ draft.__reactFiber$test={memoizedProps:{conversationId:second}};
+ update(800);check(notice().hidden,'Chat switch preserves dismissal');
+ update(100);update(750);
+ Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('denied')}}});
+ const exec=document.execCommand;
+ document.execCommand=()=>false;
+ await notice().querySelector('button').onclick();
+ check(notice().textContent.includes('复制失败') && !notice().querySelector('button').disabled,'Clipboard failure is actionable');
+ check(draft.textContent==='KEEP MY DRAFT' && !document.querySelector('textarea'),'Clipboard fallback restores draft and cleans temporary input');
+ document.execCommand=command=>{check(command==='copy','Fallback only copies');clipboard=document.querySelector('textarea').value;return true};
+ await notice().querySelector('button').onclick();
+ check(notice().textContent.includes('已复制') && clipboard.includes(second),'Clipboard fallback succeeds');
+ document.execCommand=exec;
+ // An async copy must not expose the old chat reminder after switching chats.
+ update(100);update(750);
+ let finishCopy;
+ Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:()=>new Promise(resolve=>{finishCopy=resolve})}});
+ const pendingCopy=notice().querySelector('button').onclick();
+ draft.__reactFiber$test={memoizedProps:{conversationId:first}};
+ window.codexInlineStats.update({id:first,ok:true,context:{tokens:100,window:1000}});
+ finishCopy();await pendingCopy;
+ check(notice().hidden,'Async copy cannot leak notice into another chat');
+ draft.__reactFiber$test={memoizedProps:{conversationId:second}};
+ update(100);update(750);
+ const pendingCompactionCopy=notice().querySelector('button').onclick();
+ window.codexInlineStats.update({id:second,ok:true,context:null,contextState:'waiting'});
+ finishCopy();await pendingCompactionCopy;
+ check(notice().hidden,'Compaction during copy keeps reminder hidden');
  window.codexInlineStats.remove();
  check(!document.querySelector('#codex-inline-stats'),'Clean removal');
  document.body.innerHTML='<pre>CODEX_INLINE_TEST_PASS</pre>';
 }catch(error){document.body.innerHTML='<pre>CODEX_INLINE_TEST_FAIL: '+error.message+'</pre>';}
+})();
 `;
 try {
  fs.writeFileSync(fixture, `<!doctype html><html><meta charset="utf-8"><body><main style="width:600px"><form style="height:120px"><div contenteditable="true" aria-label="Codex"></div></form></main><script>document.querySelector('[contenteditable]').__reactFiber$test={memoizedProps:{conversationId:'11111111-1111-4111-8111-111111111111'}};</script><script>${source}</script><script>${checks}</script></body></html>`);
@@ -56,7 +113,7 @@ try {
  if(result.error)throw result.error;
  assert.equal(result.status, 0, 'Headless browser failed');
  assert.match(result.stdout, /<pre>CODEX_INLINE_TEST_PASS<\/pre>/, result.stdout.slice(-1200));
- console.log('PASS: renderer binding, remount, stale response, layout, labels, removal');
+ console.log('PASS: renderer binding, remount, layout, context, 70% reminder, persistence, safe clipboard, async chat switch, removal');
 } finally {
  // Only remove this test's freshly created directory under the system temp root.
  assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()));
