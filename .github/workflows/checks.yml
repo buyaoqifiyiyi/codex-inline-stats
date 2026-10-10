@@ -1,0 +1,38 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Parser and renderer checks
+        shell: pwsh
+        run: |
+          python tests/test_telemetry.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node --check agent.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node --check renderer.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node tests/test-renderer.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: PowerShell and installer checks
+        shell: pwsh
+        run: |
+          Get-ChildItem *.ps1 | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors) { throw ($errors | Out-String) }
+          }
+          ./Install.ps1 -CheckOnly
