@@ -1,28 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {spawn} from 'node:child_process';
-import readline from 'node:readline';
 import {findCodexPages} from './debug-endpoint.mjs';
+import {createReader} from './reader-client.mjs';
 const folder=path.dirname(fileURLToPath(import.meta.url));
 const config=JSON.parse((await fs.readFile(path.join(folder,'config.json'),'utf8')).replace(/^\uFEFF/,''));
 const renderer=await fs.readFile(path.join(folder,'renderer.js'),'utf8');
-const reader=spawn(config.python,['-I','-u',path.join(folder,'reader-entry.py')],{windowsHide:true,stdio:['pipe','pipe','ignore']});
-let reading;
-readline.createInterface({input:reader.stdout}).on('line',line=>{
- try{const result=JSON.parse(line);if(result.id===reading?.id)reading.resolve(result);}catch{}
-});
-reader.on('error',()=>reading?.reject(new Error('Reader unavailable')));
-reader.on('exit',()=>reading?.reject(new Error('Reader exited')));
-reader.stdin.on('error',()=>reading?.reject(new Error('Reader pipe unavailable')));
-async function read(id){
- let timer;
- try{return await new Promise((resolve,reject)=>{
-  reading={id,resolve,reject};
-  timer=setTimeout(()=>reject(new Error('Reader timeout')),5000);
-  reader.stdin.write(JSON.stringify({id})+'\n',error=>{if(error)reject(error);});
- });}finally{clearTimeout(timer);reading=null;}
-}
+const reader=createReader(config.python,['-I','-u',path.join(folder,'reader-entry.py')]);
 async function status(state,error){
  await fs.writeFile(path.join(folder,'status.json'),JSON.stringify({state,updatedAt:new Date().toISOString(),...(error?{error}: {})}));
 }
@@ -54,14 +38,25 @@ try {
      await evaluate(client,renderer);
      const context=await evaluate(client,'window.codexInlineStats.context()');
      if(context?.id){
-      const result=await read(context.id);
+      const result=await reader.read(context.id);
       const accepted=await evaluate(client,`window.codexInlineStats.update(${JSON.stringify(result)})`);
       await status(accepted?'active':'waiting');
      }else await status('waiting');
-    }catch{await status('error','Page or reader unavailable');clients.get(target.id)?.socket.close();clients.delete(target.id);}
+    }catch{
+     const client=clients.get(target.id);
+     if(client?.socket.readyState===WebSocket.OPEN)try{await evaluate(client,'window.codexInlineStats?.waiting()');}catch{}
+     await status('error','Page or reader unavailable');client?.socket.close();clients.delete(target.id);
+    }
    }
    for(const [id,client] of clients)if(!pages.some(p=>p.id===id)){client.socket.close();clients.delete(id);}
-  }catch{await status('waiting','Debug endpoint unavailable');}
+  }catch{
+   for(const client of clients.values()){
+    if(client.socket.readyState===WebSocket.OPEN)try{await evaluate(client,'window.codexInlineStats?.waiting()');}catch{}
+    client.socket.close();
+   }
+   clients.clear();
+   await status('waiting','Debug endpoint unavailable');
+  }
   await new Promise(resolve=>setTimeout(resolve,500));
  }
-}finally{reader.kill();}
+}finally{reader.close();for(const client of clients.values())client.socket.close();}

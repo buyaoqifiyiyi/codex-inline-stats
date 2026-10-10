@@ -62,6 +62,10 @@ v0.3.2 的入口会检查实际统计连接。如果 Codex 已在运行但未启
 
 可选：`-StartAtLogin` 启用登录后后台采集；它不会启动 Codex。`-Port 9335` 指定本机端口；`-InstallDir` 指定安装目录；`-NoShortcuts` 不创建快捷方式；`-CheckOnly` 只检查环境，不安装。端口冲突时请选择其他端口，并完全退出后从新入口启动。
 
+v0.5.1 切回内嵌模式时会停用对应外置进程、移除外置桌面入口，并在桌面和开始菜单创建统计入口。可选 `Install.ps1 -RepairShortcuts` 将当前用户桌面、开始菜单和任务栏中直接指向已安装 Codex 可执行文件的快捷方式改为统计启动器；原文件备份到安装目录的 `shortcut-backups/`，路径记录在 `shortcut-backups.json`。不改变其它应用的入口，也不改变 MSIX 或协议注册。运行 `RepairShortcuts.ps1 -Restore` 可恢复仍指向本启动器的入口；卸载或切换外置时也会恢复。更新 Codex 可能重建原版入口，Windows 任务栏还可能缓存激活信息，修复快捷方式不等于所有启动路径都经过启动器。
+
+内嵌采集器会在读取子进程退出或超时后自动重建它，断线后继续探测本机 IPv4/IPv6 并重新注入。统计栏 15 秒没有收到有效更新时清除旧数值，显示“统计连接等待恢复”；重新连接后恢复数据。页面布局/日志格式变化、Node 主进程退出、以无调试参数的原版进程重新启动等情况仍可能需要启动器或人工排查；不会自动强制重启 Codex。
+
 ## 统计口径
 
 | 指标 | 含义与限制 |
@@ -134,9 +138,11 @@ python tests/test_external.py
 node --check agent.mjs
 node --check renderer.js
 node tests/test-debug-endpoint.mjs
+node tests/test-reader-client.mjs
 node tests/test-renderer.mjs
 .\Install.ps1 -CheckOnly
 .\tests\test-launch.ps1
+.\tests\test-shortcuts.ps1
 ```
 
 渲染测试使用本机 Edge headless 和合成聊天页面；可通过环境变量 `EDGE_PATH` 指定 Edge 可执行文件。测试包含聊天重新挂载、旧响应拒绝、窄布局、上下文读数与等待状态、70% 提醒边界、跨会话与重载后的提醒选择、压缩后重新启用、剪贴板成功/失败及回退、保留草稿、不自动发送、复制过程中切换会话或压缩，以及移除。解析测试覆盖完整响应计时、推理不重复计数、用量去重、并行工具返回、重复通知、边界缺失，以及压缩后上下文重估、模型/窗口变化、回滚和无效记录。

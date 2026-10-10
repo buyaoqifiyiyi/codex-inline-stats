@@ -1,8 +1,8 @@
 (() => {
-  if (window.codexInlineStats?.version === 5) return;
+  if (window.codexInlineStats?.version === 6) return;
   window.codexInlineStats?.remove();
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  let bar, metrics, notice, identity = null, latest, copiedId = null;
+  let bar, metrics, notice, identity = null, latest, copiedId = null, lastUpdate = Date.now();
   const storageKey = 'codex-inline-stats-handoff-dismissed-v1';
   const contextValid = context => Number.isFinite(context?.tokens) && context.tokens >= 0 && Number.isFinite(context.window) && context.window > 0;
   let dismissed = new Set();
@@ -116,11 +116,24 @@
   const number = (v, digits = 1) => Number.isFinite(v) ? v.toFixed(digits) : '--';
   const compact = v => !Number.isFinite(v) ? '--' : v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'k' : Math.round(v).toString();
   const api = {
-    version: 5,
+    version: 6,
     context: () => ({id: mount(), mounted: !!bar?.isConnected}),
+    waiting: () => {
+      if (!mount()) return false;
+      latest = null;
+      notice.hidden = true;
+      if (metrics.dataset.signature !== 'waiting') {
+        const span = document.createElement('span');
+        span.textContent = '◷  统计连接等待恢复 · 自动重试中';
+        metrics.replaceChildren(span); metrics.dataset.signature = 'waiting';
+      }
+      bar.hidden = false;
+      return true;
+    },
     update: data => {
       const id = mount();
-      if (!id || data.id !== id || !data.ok) { if (bar) bar.hidden = true; return false; }
+      if (!id || data.id !== id) return false;
+      if (!data.ok) { api.waiting(); return false; }
       const stage = {generating:'生成中',tools:'工具运行中',idle:'最近响应'}[data.stage] || '等待统计';
       const values = [
         ['◷',`${stage} · 调用均速 ${number(data.rate)} tok/s`,'最近一次已完成调用：输出 token（含推理）÷ 客户端观察耗时。含排队、首 token 等待及日志交付；从已知工具返回后计时。不代表服务端实时生成速度。'],
@@ -137,15 +150,17 @@
         const span = document.createElement('span'); span.textContent = `${icon}  ${text}`; span.title = title; return span;
       }));
       metrics.dataset.signature = signature;
+      lastUpdate = Date.now();
       latest = data;
       reminder(data);
       bar.hidden = false;
       return true;
     },
-    remove: () => { observer.disconnect(); bar?.remove(); style.remove(); delete window.codexInlineStats; },
+    remove: () => { observer.disconnect(); clearInterval(healthTimer); bar?.remove(); style.remove(); delete window.codexInlineStats; },
   };
   const observer = new MutationObserver(() => { mount(); });
   observer.observe(document.body, {childList:true,subtree:true});
+  const healthTimer = setInterval(() => { if (Date.now() - lastUpdate > 15000) api.waiting(); }, 1000);
   window.codexInlineStats = api;
   mount();
 })();

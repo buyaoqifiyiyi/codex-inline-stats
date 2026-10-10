@@ -6,11 +6,13 @@ param(
     [ValidateRange(1024,65535)][int]$Port = 9335,
     [switch]$StartAtLogin,
     [switch]$External,
+    [switch]$RepairShortcuts,
     [switch]$NoShortcuts,
     [switch]$CheckOnly
 )
 $ErrorActionPreference = 'Stop'
 if ($External -and $StartAtLogin) { throw 'External mode is manually launched; do not use -StartAtLogin.' }
+if ($External -and $RepairShortcuts) { throw 'Shortcut repair is for inline mode only.' }
 if (-not $NodePath) {
     $command = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($command) { $NodePath = $command.Source }
@@ -31,8 +33,8 @@ if ($External) {
     & $PythonPath -I -c 'import tkinter'
     if ($LASTEXITCODE -ne 0) { throw 'External mode requires Python with tkinter.' }
 }
-$files = @('agent.mjs','debug-endpoint.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
-    'Launch.ps1','StartAgent.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
+$files = @('agent.mjs','debug-endpoint.mjs','reader-client.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
+    'Launch.ps1','StartAgent.ps1','RepairShortcuts.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file))) { throw "Missing source file: $file" }
 }
@@ -49,8 +51,10 @@ foreach ($file in $files) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $fil
 if (-not $NoShortcuts) {
     $shell = New-Object -ComObject WScript.Shell
     if ($External) {
+        & (Join-Path $InstallDir 'RepairShortcuts.ps1') -Restore
         foreach ($entry in @(
             @{folder='Desktop';name='Codex（内置统计）.lnk';script='Launch.ps1'},
+            @{folder='Programs';name='Codex（内置统计）.lnk';script='Launch.ps1'},
             @{folder='Startup';name='Codex 内置统计采集.lnk';script='StartAgent.ps1'}
         )) {
             $oldPath = Join-Path ([Environment]::GetFolderPath($entry.folder)) $entry.name
@@ -67,6 +71,15 @@ if (-not $NoShortcuts) {
         Write-Output "External window installed in $InstallDir. Use Codex normally and launch Codex External Stats separately."
         return
     }
+    $externalScript = Join-Path $InstallDir 'external.py'
+    Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -in @('python.exe','pythonw.exe') -and $_.CommandLine -and $_.CommandLine.Contains($externalScript)
+    } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    $externalShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex 外置统计.lnk'
+    if (Test-Path -LiteralPath $externalShortcut) {
+        $oldLink = $shell.CreateShortcut($externalShortcut)
+        if ($oldLink.Arguments.Contains((Join-Path $InstallDir 'StartExternal.ps1'))) { Remove-Item -LiteralPath $externalShortcut }
+    }
     $link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Codex（内置统计）.lnk'))
     $link.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDir 'Launch.ps1') + '"'
@@ -74,6 +87,12 @@ if (-not $NoShortcuts) {
     $package = Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending | Select-Object -First 1
     if ($package) { $link.IconLocation = (Join-Path $package.InstallLocation 'app\ChatGPT.exe') + ',0' }
     $link.Save()
+    $menuLink = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Codex（内置统计）.lnk'))
+    $menuLink.TargetPath = $link.TargetPath
+    $menuLink.Arguments = $link.Arguments
+    $menuLink.WorkingDirectory = $link.WorkingDirectory
+    $menuLink.IconLocation = $link.IconLocation
+    $menuLink.Save()
     if ($StartAtLogin) {
         $startup = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Startup')) 'Codex 内置统计采集.lnk'))
         $startup.TargetPath = $link.TargetPath
@@ -82,4 +101,5 @@ if (-not $NoShortcuts) {
         $startup.Save()
     }
 }
+if ($RepairShortcuts) { & (Join-Path $InstallDir 'RepairShortcuts.ps1') }
 Write-Output "Installed in $InstallDir. Fully quit Codex, then use the desktop shortcut."

@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'StartAgent.ps1') -StopOnly
+& (Join-Path $PSScriptRoot 'RepairShortcuts.ps1') -Restore
 $externalScript = Join-Path $PSScriptRoot 'external.py'
 Get-CimInstance Win32_Process | Where-Object {
     $_.Name -in @('python.exe','pythonw.exe') -and $_.CommandLine -and $_.CommandLine.Contains($externalScript)
@@ -7,6 +8,7 @@ Get-CimInstance Win32_Process | Where-Object {
 $shell = New-Object -ComObject WScript.Shell
 foreach ($entry in @(
     @{folder='Desktop';name='Codex（内置统计）.lnk';script='Launch.ps1'},
+    @{folder='Programs';name='Codex（内置统计）.lnk';script='Launch.ps1'},
     @{folder='Desktop';name='Codex 外置统计.lnk';script='StartExternal.ps1'},
     @{folder='Startup';name='Codex 内置统计采集.lnk';script='StartAgent.ps1'}
 )) {

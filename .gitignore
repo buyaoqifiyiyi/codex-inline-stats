@@ -1,5 +1,8 @@
 config.json
 status.json
+launch-status.json
+shortcut-backups.json
+shortcut-backups/
 __pycache__/
 *.pyc
 tests/.tmp/

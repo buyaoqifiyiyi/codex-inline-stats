@@ -29,6 +29,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node tests/test-debug-endpoint.mjs
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node tests/test-reader-client.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           node tests/test-renderer.mjs
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: PowerShell and installer checks
@@ -41,3 +43,4 @@ jobs:
           }
           ./Install.ps1 -CheckOnly
           ./tests/test-launch.ps1
+          ./tests/test-shortcuts.ps1
