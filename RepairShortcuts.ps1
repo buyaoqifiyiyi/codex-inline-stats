@@ -21,6 +21,8 @@ if ($Restore) {
 $package = Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending | Select-Object -First 1
 if (-not $package) { throw 'Codex installation not found.' }
 $executable = Join-Path $package.InstallLocation 'app\ChatGPT.exe'
+$iconPath = Join-Path $PSScriptRoot 'codex.ico'
+$iconLocation = $(if (Test-Path -LiteralPath $iconPath) { $iconPath + ',0' } else { $executable + ',0' })
 $locations = @(
     [Environment]::GetFolderPath('Desktop'),
     (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
@@ -30,6 +32,11 @@ foreach ($location in $locations) {
     if (-not (Test-Path -LiteralPath $location)) { continue }
     foreach ($file in (Get-ChildItem -LiteralPath $location -Filter '*.lnk' -Recurse)) {
         $link = $shell.CreateShortcut($file.FullName)
+        if ($link.Arguments.Contains($launcher)) {
+            $link.IconLocation = $iconLocation
+            $link.Save()
+            continue
+        }
         if ($link.TargetPath -ne $executable) { continue }
         if (-not ($entries | Where-Object { $_.path -eq $file.FullName })) {
             $backupDir = Join-Path $PSScriptRoot 'shortcut-backups'
@@ -42,7 +49,7 @@ foreach ($location in $locations) {
         $link.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
         $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"'
         $link.WorkingDirectory = $PSScriptRoot
-        $link.IconLocation = $executable + ',0'
+        $link.IconLocation = $iconLocation
         $link.Save()
         Write-Output ('Statistics launcher applied to ' + $file.FullName)
     }

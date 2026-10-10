@@ -3,6 +3,7 @@ status.json
 launch-status.json
 shortcut-backups.json
 shortcut-backups/
+codex.ico
 __pycache__/
 *.pyc
 tests/.tmp/

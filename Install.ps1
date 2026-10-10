@@ -34,7 +34,7 @@ if ($External) {
     if ($LASTEXITCODE -ne 0) { throw 'External mode requires Python with tkinter.' }
 }
 $files = @('agent.mjs','debug-endpoint.mjs','reader-client.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
-    'Launch.ps1','StartAgent.ps1','RepairShortcuts.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
+    'Launch.ps1','StartAgent.ps1','RepairShortcuts.ps1','UpdateIcon.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file))) { throw "Missing source file: $file" }
 }
@@ -49,6 +49,7 @@ foreach ($file in $files) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $fil
 @{node=$(if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { $null });python=[IO.Path]::GetFullPath($PythonPath);port=$Port;mode=$(if ($External) { 'external' } else { 'inline' })} |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'config.json') -Encoding UTF8
 if (-not $NoShortcuts) {
+    & (Join-Path $InstallDir 'UpdateIcon.ps1')
     $shell = New-Object -ComObject WScript.Shell
     if ($External) {
         & (Join-Path $InstallDir 'RepairShortcuts.ps1') -Restore
@@ -85,7 +86,8 @@ if (-not $NoShortcuts) {
     $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDir 'Launch.ps1') + '"'
     $link.WorkingDirectory = $InstallDir
     $package = Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending | Select-Object -First 1
-    if ($package) { $link.IconLocation = (Join-Path $package.InstallLocation 'app\ChatGPT.exe') + ',0' }
+    if (Test-Path -LiteralPath (Join-Path $InstallDir 'codex.ico')) { $link.IconLocation = (Join-Path $InstallDir 'codex.ico') + ',0' }
+    elseif ($package) { $link.IconLocation = (Join-Path $package.InstallLocation 'app\ChatGPT.exe') + ',0' }
     $link.Save()
     $menuLink = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Codex（内置统计）.lnk'))
     $menuLink.TargetPath = $link.TargetPath
