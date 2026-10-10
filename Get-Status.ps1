@@ -22,4 +22,6 @@ foreach ($address in @('127.0.0.1', '[::1]')) {
 }
 $status = Join-Path $PSScriptRoot 'status.json'
 if (Test-Path -LiteralPath $status) { $result.collector = Get-Content -LiteralPath $status -Raw | ConvertFrom-Json }
+$launchStatus = Join-Path $PSScriptRoot 'launch-status.json'
+if (Test-Path -LiteralPath $launchStatus) { $result.launch = Get-Content -LiteralPath $launchStatus -Raw | ConvertFrom-Json }
 $result | ConvertTo-Json -Depth 4

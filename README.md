@@ -22,6 +22,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 
 正常使用只需此入口，它会一起启动采集器。原版入口启动的新进程不会启用统计。安装器不会自动退出或重启 Codex。
 
+v0.3.2 的入口会检查实际统计连接。如果 Codex 已在运行但未启用连接，会显示提示，不再静默退出。选择确定后，在 10 分钟内从菜单完全退出 Codex，启动器会等待旧进程结束再自动打开；不会强制结束进程或中断任务。重复点击入口不会创建多个等待启动器。新启动后会在最多 30 秒内检查调试页面，失败会显示提示。`Launch.ps1 -WaitForExit` 直接启用等待；`-NoDialogs` 适用于诊断和测试，不显示弹窗。
+
 运行环境未加入 PATH 时，可显式指定路径：
 
 ```powershell
@@ -68,6 +70,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 
 采集器与诊断会探测 IPv4 `127.0.0.1` 和 IPv6 `::1` 两种本机地址。Codex 重启后可能切换调试服务的绑定地址；v0.3.1 修复了只连接 IPv4 导致统计消失的问题。诊断的 `debugAddress` 显示实际可用的地址。
 
+v0.3.2 的 `launch` 字段记录入口最近一次尝试的结果与时间。`blocked_existing_process` 表示旧进程已有但没有可用统计连接；`waiting_for_exit` 表示正在等待退出；`ready` 表示入口已验证调试页面；`debug_unavailable` 表示新启动后连接仍未就绪。没有新启动记录时，不能仅凭当前进程推断用户点击了哪个入口。`ready` 是记录当时的状态，须结合当前 `collector` 与调试连接检查。
+
 插件更新：下载新源码，重新执行 `Install.ps1`（自定义路径或端口应使用原参数），再执行安装目录的 `StartAgent.ps1`。更新会停止该目录的采集器，不会中断 Codex 聊天。没有自动更新、自动适配或自动上传诊断。
 
 若客户端改变 DOM、路由或 React 属性，应检查 `renderer.js`，修改后递增 `version`；若改变日志或状态数据库格式，应检查 `telemetry.py` 和 `reader.py`。避免仅根据数值是否“看起来合理”判断兼容性。
@@ -101,6 +105,7 @@ node --check renderer.js
 node tests/test-debug-endpoint.mjs
 node tests/test-renderer.mjs
 .\Install.ps1 -CheckOnly
+.\tests\test-launch.ps1
 ```
 
 渲染测试使用本机 Edge headless 和合成聊天页面；可通过环境变量 `EDGE_PATH` 指定 Edge 可执行文件。测试包含聊天重新挂载、旧响应拒绝、窄布局、上下文读数与等待状态、70% 提醒边界、跨会话与重载后的提醒选择、压缩后重新启用、剪贴板成功/失败及回退、保留草稿、不自动发送、复制过程中切换会话或压缩，以及移除。解析测试覆盖完整响应计时、推理不重复计数、用量去重、并行工具返回、重复通知、边界缺失，以及压缩后上下文重估、模型/窗口变化、回滚和无效记录。
@@ -108,6 +113,8 @@ node tests/test-renderer.mjs
 Windows CI 在 Python 3.10 / 3.14 与 Node 22 上运行这些检查。合成页面测试不等于所有真实客户端版本、主题、窗口尺寸和模型的兼容性保证。原型曾通过本机真实日志回放和真实 Codex 内嵌验收；发布版的安装与生命周期脚本另经隔离目录验证，尚无第二台机器实测。
 
 连接测试使用本机临时 HTTP 服务，验证 IPv6 独占监听、两种地址切换、无 Codex 页面、错误/无效响应与非本机调试 URL 拒绝；测试结束后关闭服务。
+
+启动测试使用隔离目录和模拟进程/连接，验证旧进程无调试连接时的状态记录、等待完全退出后启动、参数保留以及已有正常进程的复用。不会为了测试退出真实 Codex；真正退出后的自动重开仍须由用户在任务结束时确认。
 
 ## 许可与来源
 

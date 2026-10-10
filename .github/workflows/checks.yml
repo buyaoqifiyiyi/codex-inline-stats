@@ -38,3 +38,4 @@ jobs:
             if ($errors) { throw ($errors | Out-String) }
           }
           ./Install.ps1 -CheckOnly
+          ./tests/test-launch.ps1
