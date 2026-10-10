@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import tkinter as tk
 from unittest.mock import patch
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location('external', Path(__file__).resolve().parents[1] / 'external.py')
 external = importlib.util.module_from_spec(spec)
@@ -72,10 +73,39 @@ with tempfile.TemporaryDirectory(prefix='codex-external-test-') as temp:
         root.update()
         assert app.choice.winfo_ismapped() and not app.values['total'].winfo_ismapped(), 'Session list replaces statistics'
         assert app.choice.winfo_rooty() + app.choice.winfo_height() < app.identity.winfo_rooty(), 'Session list stays above footer'
+        app.toggle_sessions()
+        app.show_floating()
+        root.update()
+        floating = app.floating
+        assert floating.window.overrideredirect(), 'Floating window is borderless'
+        assert floating.window.winfo_ismapped() and not root.winfo_ismapped(), 'Main panel collapses into floating window'
+        assert floating.rate['text'] == '18.5' and floating.percent['text'] == '75%'
+        assert floating.alert.winfo_ismapped(), '70% action remains accessible in floating window'
+        assert floating.alert.winfo_y() + floating.alert.winfo_height() <= floating.alert.master.winfo_height(), 'Floating action fits'
+        floating.start_drag(SimpleNamespace(x_root=100, y_root=100))
+        floating.drag(SimpleNamespace(x_root=150, y_root=140))
+        root.update()
+        floating.save_position()
+        assert state.float_position is not None
+        floating.alpha.set(.85)
+        floating.set_alpha()
+        floating.topmost.set(False)
+        floating.set_topmost()
+        saved = external.MonitorState(state_path)
+        assert saved.floating and saved.float_alpha == .85 and not saved.float_topmost
+        assert saved.float_position == state.float_position
+        assert floating.clamp_position(-5000, 100000)[0] == 0
+        app.render({**data, 'id': second, 'context': None})
+        root.update()
+        assert floating.percent['text'] == '--%' and not floating.alert.winfo_manager()
+        app.show_main()
+        root.update()
+        assert root.winfo_ismapped() and not floating.window.winfo_ismapped()
+        assert not external.MonitorState(state_path).floating
         app.close()
     finally:
         try:
             root.destroy()
         except tk.TclError:
             pass
-print('PASS: standalone selection, duplicate titles, stale response rejection, persisted 70% reminder, clipboard, context reset, minimum-size layout')
+print('PASS: selection, reminder, clipboard, layout, borderless floating mode, drag, opacity, pin, persistence, expand, missing context')
