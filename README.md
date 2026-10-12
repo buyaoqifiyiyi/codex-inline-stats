@@ -68,6 +68,8 @@ v0.5.1 切回内嵌模式时会停用对应外置进程、移除外置桌面入�
 
 v0.5.2 将当前 Codex 图标保存为安装目录的 `codex.ico`，统计快捷方式不再引用带版本号的 WindowsApps 路径，避免客户端更新后图标丢失。图标只在本机安装时从已安装 Codex 提取，不随源码或 Release 分发。修复已有入口可运行 `UpdateIcon.ps1` 后执行 `RepairShortcuts.ps1`，不需要停止采集器或 Codex。
 
+v0.5.3 启动新 Codex 前会独占试绑定配置端口的 IPv4 / IPv6 本机地址。任一地址不可绑定（包括进程已退出但内核监听尚未释放）时选择备用端口，原子更新插件配置，再重启采集器加载同一端口。端口未占用则沿用原值；`-Port` 指定的是优先端口，启动时遇到占用仍会切换。不会结束占用端口的进程，也不更改防火墙或系统配置。试绑定和 Codex 真正监听之间仍存在很短的竞争窗口，启动器继续检查页面是否就绪；失败会留下实际端口记录，避免盲目重启。
+
 ## 统计口径
 
 | 指标 | 含义与限制 |
@@ -108,6 +110,8 @@ v0.5.2 将当前 Codex 图标保存为安装目录的 `codex.ico`，统计快捷
 
 v0.3.2 的 `launch` 字段记录入口最近一次尝试的结果与时间。`blocked_existing_process` 表示旧进程已有但没有可用统计连接；`waiting_for_exit` 表示正在等待退出；`ready` 表示入口已验证调试页面；`debug_unavailable` 表示新启动后连接仍未就绪。没有新启动记录时，不能仅凭当前进程推断用户点击了哪个入口。`ready` 是记录当时的状态，须结合当前 `collector` 与调试连接检查。
 
+内嵌诊断还会报告 `portBindable` 和 `listeners`。运行正常的 Codex 自己占用端口时 `portBindable=false` 是正常现象；只有结合 `debugReachable=false` 等状态才意味着可能存在冲突。`listeners[].processExists=false` 表示监听记录的所属进程已不存在，仍以独占绑定结果判定是否可用。
+
 插件更新：下载新源码，重新执行 `Install.ps1`（自定义路径或端口应使用原参数），再执行安装目录的 `StartAgent.ps1`。更新会停止该目录的采集器，不会中断 Codex 聊天。没有自动更新、自动适配或自动上传诊断。
 
 若客户端改变 DOM、路由或 React 属性，应检查 `renderer.js`，修改后递增 `version`；若改变日志或状态数据库格式，应检查 `telemetry.py` 和 `reader.py`。避免仅根据数值是否“看起来合理”判断兼容性。
@@ -144,6 +148,7 @@ node tests/test-reader-client.mjs
 node tests/test-renderer.mjs
 .\Install.ps1 -CheckOnly
 .\tests\test-launch.ps1
+.\tests\test-debug-port.ps1
 .\tests\test-shortcuts.ps1
 ```
 

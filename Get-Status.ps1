@@ -21,6 +21,14 @@ if ($result.mode -eq 'external') {
     $result | ConvertTo-Json -Depth 4
     return
 }
+. (Join-Path $PSScriptRoot 'SelectDebugPort.ps1')
+$result.portBindable = Test-DebugPortFree ([int]$config.port)
+if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
+    $result.listeners = @(Get-NetTCPConnection -LocalPort ([int]$config.port) -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
+        $listenerProcess = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
+        [pscustomobject]@{address=$_.LocalAddress;pid=$_.OwningProcess;processExists=[bool]$listenerProcess}
+    })
+}
 foreach ($address in @('127.0.0.1', '[::1]')) {
     try {
         $targets = Invoke-RestMethod -Uri "http://${address}:$($config.port)/json/list" -TimeoutSec 3

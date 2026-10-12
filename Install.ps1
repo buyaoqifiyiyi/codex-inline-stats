@@ -34,7 +34,7 @@ if ($External) {
     if ($LASTEXITCODE -ne 0) { throw 'External mode requires Python with tkinter.' }
 }
 $files = @('agent.mjs','debug-endpoint.mjs','reader-client.mjs','renderer.js','reader.py','reader-entry.py','telemetry.py',
-    'Launch.ps1','StartAgent.ps1','RepairShortcuts.ps1','UpdateIcon.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
+    'Launch.ps1','SelectDebugPort.ps1','StartAgent.ps1','RepairShortcuts.ps1','UpdateIcon.ps1','external.py','StartExternal.ps1','Uninstall.ps1','Get-Status.ps1','LICENSE','THIRD_PARTY_NOTICES.md','VERSION')
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file))) { throw "Missing source file: $file" }
 }

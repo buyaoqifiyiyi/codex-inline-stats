@@ -61,14 +61,33 @@ try {
             Start-Sleep -Milliseconds 500
         }
     }
-    Write-LaunchStatus 'starting'
+    . (Join-Path $PSScriptRoot 'SelectDebugPort.ps1')
+    $config = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config.json') -Raw | ConvertFrom-Json
+    $previousPort = [int]$config.port
+    $selectedPort = Select-DebugPort $previousPort
+    if ($selectedPort -ne $previousPort) {
+        $config.port = $selectedPort
+        $configPath = Join-Path $PSScriptRoot 'config.json'
+        $temporaryConfig = Join-Path $PSScriptRoot ('config-' + [guid]::NewGuid().ToString('N') + '.tmp')
+        $previousConfig = $temporaryConfig + '.bak'
+        try {
+            $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $temporaryConfig -Encoding UTF8
+            [IO.File]::Replace($temporaryConfig, $configPath, $previousConfig)
+        } finally {
+            if (Test-Path -LiteralPath $temporaryConfig) { Remove-Item -LiteralPath $temporaryConfig }
+            if (Test-Path -LiteralPath $previousConfig) { Remove-Item -LiteralPath $previousConfig }
+        }
+    }
+    # Reload configuration even if it changed while this launcher waited for exit.
+    & (Join-Path $PSScriptRoot 'StartAgent.ps1') -Restart
+    Write-LaunchStatus 'starting' "Debug port $selectedPort (previous $previousPort)."
     Start-Process -FilePath $executable -ArgumentList @("--remote-debugging-port=$($config.port)", '--remote-debugging-address=127.0.0.1') -WorkingDirectory (Split-Path -Parent $executable) -WindowStyle Normal
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         if (Test-DebugPage) { Write-LaunchStatus 'ready'; return }
         Start-Sleep -Milliseconds 500
     } while ([DateTime]::UtcNow -lt $deadline)
-    Write-LaunchStatus 'debug_unavailable' 'Codex launched, but no debug page became reachable within 30 seconds.'
+    Write-LaunchStatus 'debug_unavailable' "Codex launched on port $selectedPort, but no debug page became reachable within 30 seconds."
     $null = Show-LaunchMessage 'Codex 已启动，但统计连接没有就绪。请运行 Get-Status.ps1 查看 launch 和 collector 状态；不要反复重启。'
 } catch {
     Write-LaunchStatus 'error' $_.Exception.GetType().Name

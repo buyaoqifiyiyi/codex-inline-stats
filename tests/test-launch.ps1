@@ -5,11 +5,12 @@ New-Item -ItemType Directory -Path $testDir | Out-Null
 function Assert($condition, $label) { if (-not $condition) { throw $label } }
 try {
     Copy-Item -LiteralPath $source -Destination (Join-Path $testDir 'Launch.ps1')
-    Set-Content -LiteralPath (Join-Path $testDir 'StartAgent.ps1') -Value '$global:launchTestState.agentStarted = $true'
-    Set-Content -LiteralPath (Join-Path $testDir 'config.json') -Value '{"port":9335}'
+    Set-Content -LiteralPath (Join-Path $testDir 'StartAgent.ps1') -Value 'param([switch]$Restart); $global:launchTestState.agentStarted = $true; if ($Restart) { $global:launchTestState.agentRestarts++ }'
+    Set-Content -LiteralPath (Join-Path $testDir 'SelectDebugPort.ps1') -Value 'function Select-DebugPort($PreferredPort) { if ($global:launchTestState.forcePortFallback) { 19335 } else { $PreferredPort } }'
+    Set-Content -LiteralPath (Join-Path $testDir 'config.json') -Value '{"port":9335,"python":"keep-this-runtime","mode":"inline"}'
     function Get-AppxPackage { [pscustomobject]@{Version=[version]'1.0';InstallLocation=$testDir} }
-    function Test-Path { param($LiteralPath) $true }
-    $global:launchTestState = @{running=$true;reachable=$false;launches=@();exitsAfterPoll=$false;polls=0;agentStarted=$false}
+    function Test-Path { param($LiteralPath) if ($LiteralPath -like '*app\ChatGPT.exe') { $true } else { Microsoft.PowerShell.Management\Test-Path -LiteralPath $LiteralPath } }
+    $global:launchTestState = @{running=$true;reachable=$false;launches=@();exitsAfterPoll=$false;polls=0;agentStarted=$false;agentRestarts=0;forcePortFallback=$false}
     function Get-Process {
         $global:launchTestState.polls++
         if ($global:launchTestState.running -and -not ($global:launchTestState.exitsAfterPoll -and $global:launchTestState.polls -gt 1)) { [pscustomobject]@{Path='C:\WindowsApps\OpenAI.Codex\app\ChatGPT.exe'} }
@@ -34,7 +35,14 @@ try {
     & (Join-Path $testDir 'Launch.ps1') -NoDialogs
     Assert ($global:launchTestState.launches.Count -eq 1) 'Healthy existing Codex must not relaunch'
     Assert ($global:launchTestState.agentStarted) 'Start the collector'
-    Write-Output 'PASS: blocked existing process, wait-for-exit launch, required flags, endpoint verification, healthy reuse'
+    $global:launchTestState.running = $false; $global:launchTestState.reachable = $false; $global:launchTestState.forcePortFallback = $true
+    & (Join-Path $testDir 'Launch.ps1') -NoDialogs
+    $configAfterFallback = Get-Content -LiteralPath (Join-Path $testDir 'config.json') -Raw | ConvertFrom-Json
+    Assert ($configAfterFallback.port -eq 19335) 'Occupied configured port must be replaced in shared collector config'
+    Assert ($configAfterFallback.python -eq 'keep-this-runtime' -and $configAfterFallback.mode -eq 'inline') 'Port fallback preserves other plugin configuration'
+    Assert ($global:launchTestState.launches[-1] -contains '--remote-debugging-port=19335') 'Codex receives the replacement port'
+    Assert ($global:launchTestState.agentRestarts -ge 1) 'Collector reloads shared port before launching Codex'
+    Write-Output 'PASS: existing process, wait-for-exit, occupied-port replacement, shared config preservation, collector reload, healthy reuse'
 } finally {
     Assert ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($testDir)) -eq [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')) 'Cleanup stays in temp'
     Remove-Item -LiteralPath $testDir -Recurse -Force

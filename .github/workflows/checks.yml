@@ -43,4 +43,5 @@ jobs:
           }
           ./Install.ps1 -CheckOnly
           ./tests/test-launch.ps1
+          ./tests/test-debug-port.ps1
           ./tests/test-shortcuts.ps1
