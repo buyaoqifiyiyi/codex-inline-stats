@@ -37,6 +37,12 @@ try {
  check(bar.scrollWidth<=bar.clientWidth,'No horizontal overflow');
  check(bar.textContent.includes('调用均速 18.0 tok/s'),'Observed rate label');
  check(bar.textContent.includes('对话上下文约 56% · 144.0k / 258.4k tok'),'Whole context label');
+ window.codexInlineStats.update({id:second,ok:true,rate:null,rateState:'in_flight',cache:null,cacheState:'field_missing',total:1000});
+ check(bar.textContent.includes('调用均速 等待本轮完成') && bar.textContent.includes('缓存命中 日志未提供'),'Missing values explain why');
+ window.codexInlineStats.update({id:second,ok:true,rate:null,rateState:'no_boundary',cache:0,cacheState:'reported',total:1000});
+ check(bar.textContent.includes('调用均速 缺少计时边界') && bar.textContent.includes('缓存命中 0%'),'Unknown and zero are distinct');
+ window.codexInlineStats.update({id:second,ok:true,rate:null,rateState:'stale',cache:null,cacheState:'stale',total:1000});
+ check(bar.textContent.includes('调用均速 数据已过期') && bar.textContent.includes('缓存命中 数据已过期'),'Stale values explain why');
  check(!bar.textContent.includes('最近输入'),'Replaced input-only label');
  window.codexInlineStats.update({id:second,ok:true,context:null,contextState:'waiting'});
  check(bar.textContent.includes('等待新记录') && !bar.textContent.includes('56%'),'No pre-compaction reading');

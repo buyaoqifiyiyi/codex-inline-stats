@@ -191,7 +191,10 @@ class Measurements:
             "basis": basis, "input_tokens": integer(usage.get("input_tokens")),
             "cached_input_tokens": integer(usage.get("cached_input_tokens")),
             "output_tokens": output, "reasoning_output_tokens": integer(usage.get("reasoning_output_tokens")),
-            "cache_percent": cache_percent(usage), "measured_at_ms": at, "model": self.model,
+            "cache_percent": cache_percent(usage),
+            "cache_state": ("reported" if cache_percent(usage) is not None else
+                            "empty_input" if integer(usage.get("input_tokens")) == 0 else "field_missing"),
+            "measured_at_ms": at, "model": self.model,
             "source": source, "turn_id": self.turn_id,
         }
         if isinstance(total, dict):

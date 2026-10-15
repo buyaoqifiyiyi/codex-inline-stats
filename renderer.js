@@ -1,5 +1,5 @@
 (() => {
-  if (window.codexInlineStats?.version === 6) return;
+  if (window.codexInlineStats?.version === 7) return;
   window.codexInlineStats?.remove();
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let bar, metrics, notice, identity = null, latest, copiedId = null, lastUpdate = Date.now();
@@ -116,7 +116,7 @@
   const number = (v, digits = 1) => Number.isFinite(v) ? v.toFixed(digits) : '--';
   const compact = v => !Number.isFinite(v) ? '--' : v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'k' : Math.round(v).toString();
   const api = {
-    version: 6,
+    version: 7,
     context: () => ({id: mount(), mounted: !!bar?.isConnected}),
     waiting: () => {
       if (!mount()) return false;
@@ -135,9 +135,13 @@
       if (!id || data.id !== id) return false;
       if (!data.ok) { api.waiting(); return false; }
       const stage = {generating:'生成中',tools:'工具运行中',idle:'最近响应'}[data.stage] || '等待统计';
+      const rateState = {in_flight:'等待本轮完成',no_sample:'暂无响应样本',no_boundary:'缺少计时边界',stale:'数据已过期'};
+      const cacheState = {field_missing:'日志未提供',empty_input:'暂无输入用量',no_sample:'暂无样本',stale:'数据已过期'};
+      const rate = Number.isFinite(data.rate) ? `${number(data.rate)} tok/s` : rateState[data.rateState] || '等待统计';
+      const cache = Number.isFinite(data.cache) ? `${number(data.cache,0)}%` : cacheState[data.cacheState] || '等待统计';
       const values = [
-        ['◷',`${stage} · 调用均速 ${number(data.rate)} tok/s`,'最近一次已完成调用：输出 token（含推理）÷ 客户端观察耗时。含排队、首 token 等待及日志交付；从已知工具返回后计时。不代表服务端实时生成速度。'],
-        ['▤',`${compact(data.total)} tok · 缓存命中 ${number(data.cache,0)}%`,'累计 token 取日志累计计数；缓存命中率取最近一次模型调用。'],
+        ['◷',`${stage} · 调用均速 ${rate}`,'最近一次已完成调用：输出 token（含推理）÷ 客户端观察耗时。缺少完整计时边界、当前响应尚未完成或数据过期时显示原因；含排队、首 token 等待及日志交付，不代表服务端实时生成速度。'],
+        ['▤',`${compact(data.total)} tok · 缓存命中 ${cache}`,'缓存命中率取最近一次模型调用。若日志没有缓存字段、没有输入用量或数据已过期，会显示对应状态；0% 是有效读数。'],
       ];
       const context = data.context;
       const validContext = contextValid(context);

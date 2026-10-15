@@ -38,12 +38,22 @@ event(m, 109.9, 'response_item', 'custom_tool_call_output', call_id='a')
 event(m, 110, 'token_usage_record', response_id='two', usage=usage)
 assert m.last['duration_ms'] == 10000 and m.last['rate'] == 24.2
 assert m.output_total == 484 and m.last['cache_percent'] == 80
+assert m.last['cache_state'] == 'reported'
 
 partial = Measurements()
 event(partial, 0, 'event_msg', 'item_completed', item={'type': 'AgentMessage'},
       started_at_ms=1791600000000)
 event(partial, 1, 'token_usage_record', response_id='partial', usage=usage)
 assert partial.last['rate'] is None and partial.last['output_tokens'] == 242
+assert partial.last['cache_state'] == 'reported'
+uncached = Measurements()
+event(uncached, 0, 'event_msg', 'task_started', turn_id='uncached')
+event(uncached, 10, 'token_usage_record', response_id='zero-cache', usage={
+    'input_tokens': 100, 'cached_input_tokens': 0, 'output_tokens': 10})
+assert uncached.last['cache_percent'] == 0 and uncached.last['cache_state'] == 'reported'
+event(uncached, 11, 'token_usage_record', response_id='missing-cache', usage={
+    'input_tokens': 100, 'output_tokens': 10})
+assert uncached.last['cache_percent'] is None and uncached.last['cache_state'] == 'field_missing'
 event(m, 111, 'event_msg', 'task_complete')
 event(m, 200, 'token_usage_record', response_id='after-finish', usage=usage)
 assert m.last['rate'] is None
@@ -53,9 +63,15 @@ event(legacy, 0, 'event_msg', 'task_started', turn_id='legacy')
 event(legacy, 10, 'event_msg', 'token_count', info={
     'last_token_usage': usage, 'total_token_usage': usage})
 assert legacy.last['rate'] == 24.2
+assert legacy.last['cache_state'] == 'reported'
 event(legacy, 11, 'event_msg', 'token_count', info={
     'last_token_usage': usage, 'total_token_usage': usage})
 assert legacy.sample_count == 1
+empty_input = Measurements()
+event(empty_input, 0, 'event_msg', 'task_started', turn_id='empty-input')
+event(empty_input, 10, 'token_usage_record', response_id='empty', usage={
+    'input_tokens': 0, 'cached_input_tokens': 0, 'output_tokens': 10})
+assert empty_input.last['cache_state'] == 'empty_input'
 print('PASS: whole-response timing, reasoning counted once, duplicate usage, '
       'parallel tools, late outputs, missing boundaries, legacy usage')
 

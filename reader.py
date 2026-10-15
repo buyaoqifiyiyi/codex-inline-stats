@@ -36,9 +36,15 @@ def reading(thread_id):
     stale = time.time()*1000-last.get('measured_at_ms',0)>900000
     # A previous turn's completed response is not labelled as the current turn's live speed.
     current = last.get('turn_id') == metrics.get('turn_id')
+    rate_state = ('stale' if stale else
+                  'in_flight' if not current and metrics.get('stage') in ('generating', 'tools') else
+                  'no_sample' if not current else
+                  'no_boundary' if last.get('rate') is None else 'ready')
     return {'id':thread_id,'ok':True,'stage':metrics.get('stage'),
         'rate':None if stale or not current else last.get('rate'),
         'cache':None if stale else last.get('cache_percent'),
+        'rateState':rate_state,
+        'cacheState':'stale' if stale else last.get('cache_state', 'no_sample'),
         'total':total,'context':metrics.get('context'),
         'contextState':metrics.get('context_state')}
 
