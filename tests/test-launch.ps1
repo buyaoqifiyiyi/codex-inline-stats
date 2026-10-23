@@ -42,6 +42,11 @@ try {
     Assert ($configAfterFallback.python -eq 'keep-this-runtime' -and $configAfterFallback.mode -eq 'inline') 'Port fallback preserves other plugin configuration'
     Assert ($global:launchTestState.launches[-1] -contains '--remote-debugging-port=19335') 'Codex receives the replacement port'
     Assert ($global:launchTestState.agentRestarts -ge 1) 'Collector reloads shared port before launching Codex'
+    Set-Content -LiteralPath (Join-Path $testDir 'shortcut-backups.json') -Value '[]'
+    Set-Content -LiteralPath (Join-Path $testDir 'RepairShortcuts.ps1') -Value '$global:launchTestState.shortcutsRefreshed = $true'
+    $global:launchTestState.running = $true
+    & (Join-Path $testDir 'Launch.ps1') -NoDialogs
+    Assert ($global:launchTestState.shortcutsRefreshed) 'Previously opted-in shortcut repair refreshed even when Codex already runs'
     Write-Output 'PASS: existing process, wait-for-exit, occupied-port replacement, shared config preservation, collector reload, healthy reuse'
 } finally {
     Assert ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($testDir)) -eq [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')) 'Cleanup stays in temp'

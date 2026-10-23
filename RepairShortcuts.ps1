@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $shell = New-Object -ComObject WScript.Shell
 $receipt = Join-Path $PSScriptRoot 'shortcut-backups.json'
 $entries = @()
-if (Test-Path -LiteralPath $receipt) { $entries = @(Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json) }
+if (Test-Path -LiteralPath $receipt) { $entries = @(Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json | ForEach-Object { $_ }) }
 $launcher = Join-Path $PSScriptRoot 'Launch.ps1'
 if ($Restore) {
     foreach ($entry in $entries) {
@@ -21,6 +21,10 @@ if ($Restore) {
 $package = Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending | Select-Object -First 1
 if (-not $package) { throw 'Codex installation not found.' }
 $executable = Join-Path $package.InstallLocation 'app\ChatGPT.exe'
+$packageDirectory = Split-Path $package.InstallLocation -Leaf
+$publisher = ($packageDirectory -split '__')[-1]
+$packageParent = Split-Path $package.InstallLocation -Parent
+$oldExecutablePattern = '^' + [regex]::Escape($packageParent) + '\\OpenAI\.Codex_[^\\]+__' + [regex]::Escape($publisher) + '\\app\\ChatGPT\.exe$'
 $iconPath = Join-Path $PSScriptRoot 'codex.ico'
 $iconLocation = $(if (Test-Path -LiteralPath $iconPath) { $iconPath + ',0' } else { $executable + ',0' })
 $locations = @(
@@ -37,7 +41,8 @@ foreach ($location in $locations) {
             $link.Save()
             continue
         }
-        if ($link.TargetPath -ne $executable) { continue }
+        # Shell can retain the previous MSIX version's link for the same AppUserModelID.
+        if ($link.TargetPath -ne $executable -and $link.TargetPath -notmatch $oldExecutablePattern) { continue }
         if (-not ($entries | Where-Object { $_.path -eq $file.FullName })) {
             $backupDir = Join-Path $PSScriptRoot 'shortcut-backups'
             New-Item -ItemType Directory -Path $backupDir -Force | Out-Null

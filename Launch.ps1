@@ -41,6 +41,11 @@ try {
     if (-not $package) { throw 'Codex MSIX installation was not found.' }
     $executable = Join-Path $package.InstallLocation 'app\ChatGPT.exe'
     if (-not (Test-Path -LiteralPath $executable)) { throw 'Unsupported Codex installation layout.' }
+    # Maintain shortcut repair only for installations that already opted into it.
+    if ((Test-Path -LiteralPath (Join-Path $PSScriptRoot 'shortcut-backups.json')) -and
+        (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'RepairShortcuts.ps1'))) {
+        & (Join-Path $PSScriptRoot 'RepairShortcuts.ps1') | Out-Null
+    }
     & (Join-Path $PSScriptRoot 'StartAgent.ps1')
     if (Get-RunningCodex) {
         if (Test-DebugPage) { Write-LaunchStatus 'ready'; return }
