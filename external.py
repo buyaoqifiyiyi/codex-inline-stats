@@ -34,20 +34,10 @@ def context_percent(context):
     return 100 * tokens / window
 
 
-def handoff_prompt(thread_id):
-    return (f'请将本会话（ID：{thread_id}）的任务交接到新会话。\n'
-            '先结合完整聊天与实际文件，保存可点击的 Markdown 交接说明：目标与最新要求、已完成事项与验证结果、'
-            '关键文件路径和必要命令、未完成任务与阻塞条件、下一步具体动作。区分已验证和待验证结果，避免重复执行已完成工作。\n'
-            '再新建同一项目下的会话，提供交接文件路径、工作目录和继续执行指令，让新会话接续剩余任务，返回打开入口。'
-            '若无法创建，明确说明并提供可粘贴的新会话启动指令，不要声称已经创建。\n'
-            '列出正在运行的任务与定时自动化的状态和归属，避免重复启动或重复创建。')
-
-
 class MonitorState:
     def __init__(self, path):
         self.path = path
         self.selected = ''
-        self.dismissed = set()
         self.floating = False
         self.float_position = None
         self.float_alpha = 0.96
@@ -55,7 +45,6 @@ class MonitorState:
         try:
             value = json.loads(path.read_text(encoding='utf-8'))
             self.selected = value.get('selected', '') if isinstance(value.get('selected'), str) else ''
-            self.dismissed = {x for x in value.get('dismissed', [])[-200:] if isinstance(x, str)}
             self.floating = value.get('floating') is True
             position = value.get('float_position')
             if isinstance(position, list) and len(position) == 2 and all(type(x) is int and abs(x) < 100000 for x in position):
@@ -71,20 +60,13 @@ class MonitorState:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temp = self.path.with_suffix('.tmp')
-            temp.write_text(json.dumps({'selected': self.selected, 'dismissed': sorted(self.dismissed)[-200:],
+            temp.write_text(json.dumps({'selected': self.selected,
                                         'floating': self.floating, 'float_position': self.float_position,
                                         'float_alpha': self.float_alpha, 'float_topmost': self.float_topmost}), encoding='utf-8')
             os.replace(temp, self.path)
             return True
         except OSError:
             return False
-
-    def remind(self, thread_id, context):
-        percent = context_percent(context)
-        if percent is not None and percent < 70 and thread_id in self.dismissed:
-            self.dismissed.remove(thread_id)
-            self.save()
-        return percent is not None and percent >= 70 and thread_id not in self.dismissed
 
 
 class Monitor:
@@ -94,7 +76,6 @@ class Monitor:
         self.incoming, self.requests = queue.Queue(), queue.Queue()
         self.stop = threading.Event()
         self.selected, self.data = state.selected, None
-        self.feedback = ''
         self.floating = None
         root.title('Codex 外置统计')
         root.geometry('440x620')
@@ -191,14 +172,6 @@ class Monitor:
         self.progress.configure(style='Horizontal.TProgressbar')
         self.report = ttk.Label(self.dashboard, text='最近上报：--', style='Mono.TLabel')
         self.report.pack(anchor='w')
-        self.reminder = ttk.Frame(self.dashboard)
-        self.reminder_message = ttk.Label(self.reminder, text='上下文达到 70%\n建议本轮结束后新开会话并交接。', foreground='#e0ba7c', wraplength=380)
-        self.reminder_message.pack(anchor='w')
-        actions = ttk.Frame(self.reminder)
-        actions.pack(anchor='w', pady=(4, 0))
-        self.copy = ttk.Button(actions, text='复制交接指令', style='Accent.TButton', command=self.copy_handoff)
-        self.copy.pack(side='left')
-        ttk.Button(actions, text='暂不提醒', command=self.dismiss).pack(side='left', padx=8)
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<Configure>', self.resize)
         root.bind('<Control-f>', lambda _event: self.show_floating())
@@ -236,7 +209,7 @@ class Monitor:
 
     def resize(self, event):
         if event.widget is self.root:
-            for label in (self.identity, self.status, self.title, self.context, self.reminder_message):
+            for label in (self.identity, self.status, self.title, self.context):
                 label.configure(wraplength=max(200, event.width - 44))
 
     def filter_rows(self):
@@ -254,7 +227,6 @@ class Monitor:
         if not ids or ids[0] == self.selected:
             return
         self.selected = ids[0]
-        self.feedback = ''
         self.state.selected = self.selected
         self.state.save()
         self.data = None
@@ -334,41 +306,11 @@ class Monitor:
         except (ValueError, TypeError, OverflowError, OSError):
             stamp = '--'
         self.report.configure(text='最近上报：' + stamp)
-        if self.state.remind(self.selected, context):
-            self.reminder.pack(fill='x', pady=(10, 0))
-        else:
-            self.reminder.pack_forget()
-        self.copy.configure(text='复制交接指令')
         stage = {'generating': '生成中', 'tools': '工具运行中', 'idle': '最近响应'}.get(data.get('stage'), '等待统计')
-        self.status.configure(text=self.feedback or (stage if valid else '所选会话日志暂不可用'))
+        self.status.configure(text=stage if valid else '所选会话日志暂不可用')
         if self.floating:
             self.floating.render()
         return True
-
-    def dismiss(self):
-        self.state.dismissed.add(self.selected)
-        saved = self.state.save()
-        self.reminder.pack_forget()
-        if self.floating:
-            self.floating.render()
-        if not saved:
-            self.feedback = '暂不提醒已生效；无法保存选择，重启后会重新提醒'
-            self.status.configure(text=self.feedback)
-            if self.floating:
-                self.floating.render()
-
-    def copy_handoff(self):
-        if not self.selected:
-            return
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(handoff_prompt(self.selected))
-            self.root.update_idletasks()
-            self.dismiss()
-            self.feedback = '已复制交接指令，请粘贴到所选原会话发送'
-            self.status.configure(text=self.feedback)
-        except tk.TclError:
-            self.status.configure(text='复制失败，请重试')
 
     def close(self):
         if self.floating:
@@ -415,7 +357,6 @@ class FloatingWindow:
         self.progress.pack(fill='x', pady=(7, 7))
         self.detail = tk.Label(frame, text='', anchor='w', background='#1c232d', foreground='#929eaf', font=('Microsoft YaHei UI', 8), wraplength=310)
         self.detail.pack(fill='x')
-        self.alert = ttk.Button(frame, text='上下文 ≥70% · 复制交接指令', style='Accent.TButton', command=monitor.copy_handoff)
         self.drag_origin = None
         for widget in (frame, header, self.name, self.title, line, self.rate, self.percent, self.detail):
             widget.bind('<ButtonPress-1>', self.start_drag)
@@ -433,9 +374,6 @@ class FloatingWindow:
             opacity.add_radiobutton(label=text, variable=self.alpha, value=value, command=self.set_alpha)
         self.menu.add_cascade(label='透明度', menu=opacity)
         self.menu.add_separator()
-        self.menu.add_command(label='复制交接指令', command=monitor.copy_handoff)
-        self.menu.add_command(label='此次暂不提醒', command=monitor.dismiss)
-        self.menu.add_separator()
         self.menu.add_command(label='退出统计', command=monitor.close)
 
     def show(self):
@@ -444,17 +382,14 @@ class FloatingWindow:
         if position is None:
             position = [self.window.winfo_screenwidth() - 370, 80]
         x, y = self.clamp_position(*position)
-        self.window.geometry(f'350x{self.height()}+{x}+{y}')
+        self.window.geometry(f'350x190+{x}+{y}')
         self.window.deiconify()
         self.window.lift()
-
-    def height(self):
-        return 230 if self.alert.winfo_manager() else 190
 
     def clamp_position(self, x, y):
         # Keep a recoverable drag handle on the primary desktop after monitor changes.
         return (max(0, min(int(x), max(0, self.window.winfo_screenwidth() - 350))),
-                max(0, min(int(y), max(0, self.window.winfo_screenheight() - self.height() - 50))))
+                max(0, min(int(y), max(0, self.window.winfo_screenheight() - 190 - 50))))
 
     def start_drag(self, event):
         self.drag_origin = (event.x_root, event.y_root, self.window.winfo_x(), self.window.winfo_y())
@@ -495,16 +430,9 @@ class FloatingWindow:
         self.title.configure(text=title[:23] + '…' if len(title) > 24 else title)
         self.name.configure(text='CODEX · ' + {'generating': '生成中', 'tools': '工具运行中', 'idle': '最近响应'}.get(data.get('stage'), '等待统计'))
         self.rate.configure(text=app.values['rate'].cget('text'))
-        self.percent.configure(text=f'{percent:.0f}%' if percent is not None else '--%', foreground='#e0ba7c' if percent is not None and percent >= 70 else '#7ed0d6')
+        self.percent.configure(text=f'{percent:.0f}%' if percent is not None else '--%')
         self.progress['value'] = min(100, percent) if percent is not None else 0
-        self.detail.configure(text='交接指令已复制 · 粘贴到原会话' if app.feedback.startswith('已复制') else f"上下文 · 累计 {compact(data.get('total'))} tok · 缓存 {app.values['cache'].cget('text')}")
-        if app.state.remind(app.selected, data.get('context') if data.get('ok') else None):
-            self.alert.pack(fill='x', pady=(8, 0))
-        else:
-            self.alert.pack_forget()
-        if self.window.winfo_ismapped():
-            x, y = self.clamp_position(self.window.winfo_x(), self.window.winfo_y())
-            self.window.geometry(f'350x{self.height()}+{x}+{y}')
+        self.detail.configure(text=f"上下文 · 累计 {compact(data.get('total'))} tok · 缓存 {app.values['cache'].cget('text')}")
 
 
 def main():
